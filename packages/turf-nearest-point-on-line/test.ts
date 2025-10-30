@@ -517,3 +517,22 @@ test("turf-nearest-point-on-line -- issue 2808 redundant point support", (t) => 
 
   t.end();
 });
+
+test("turf-nearest-point-on-line -- issue 2934 correct endpoint chosen when in opposite hemisphere", (t) => {
+  // create a long line where the southern end point should be chosen, but the
+  // northern endpoint is closer to the projected great circles
+  const line = lineString([
+    [25, 88],
+    [25, -70],
+  ]);
+  const pt = point([-45, -88]);
+  const nearest = nearestPointOnLine(line, pt);
+
+  t.deepEqual(
+    truncate(nearest, { precision: 8 }).geometry.coordinates,
+    [25, -70],
+    "nearest point is in the Southern Hemisphere"
+  );
+
+  t.end();
+});

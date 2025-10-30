@@ -155,6 +155,11 @@ function magnitude(v: Vector): number {
   return Math.sqrt(Math.pow(v[0], 2) + Math.pow(v[1], 2) + Math.pow(v[2], 2));
 }
 
+function normalize(v: Vector): Vector {
+  const mag = magnitude(v);
+  return [v[0] / mag, v[1] / mag, v[2] / mag];
+}
+
 function angle(v1: Vector, v2: Vector): number {
   const theta = dot(v1, v2) / (magnitude(v1) * magnitude(v2));
   return Math.acos(Math.min(Math.max(theta, -1), 1));
@@ -193,55 +198,43 @@ function nearestPointOnSegment(
   const B = lngLatToVector(posB); // ... to posB
   const C = lngLatToVector(posC); // ... to posC
 
-  // Components of target point.
-  const [Cx, Cy, Cz] = C;
+  // The axis (normal vector) of the great circle plane containing the line segment
+  const segment_axis = cross(A, B);
 
-  // Calculate coefficients.
-  const [D, E, F] = cross(A, B);
-  const a = E * Cz - F * Cy;
-  const b = F * Cx - D * Cz;
-  const c = D * Cy - E * Cx;
+  // The axis of the great circle passing through the segment's axis and the
+  // target point
+  const target_axis = cross(segment_axis, C);
 
-  const f = c * E - b * F;
-  const g = a * F - c * D;
-  const h = b * D - a * E;
+  // The line of intersection between the two great circle planes
+  const intersection_axis = cross(target_axis, segment_axis);
 
-  const t = 1 / Math.sqrt(Math.pow(f, 2) + Math.pow(g, 2) + Math.pow(h, 2));
+  // Vectors to the two points these great circles intersect are the normalized
+  // intersection and its antipodes
+  const I1 = normalize(intersection_axis);
+  const I2: Vector = [-I1[0], -I1[1], -I1[2]];
 
-  // Vectors to the two points these great circles intersect.
-  const I1: Vector = [f * t, g * t, h * t];
-  const I2: Vector = [-1 * f * t, -1 * g * t, -1 * h * t];
-
-  // Figure out which is the closest intersection to this segment of the great
-  // circle.
-  const angleAB = angle(A, B);
-  const angleAI1 = angle(A, I1);
-  const angleBI1 = angle(B, I1);
-  const angleAI2 = angle(A, I2);
-  const angleBI2 = angle(B, I2);
-
-  let I: Vector;
-
-  if (
-    (angleAI1 < angleAI2 && angleAI1 < angleBI2) ||
-    (angleBI1 < angleAI2 && angleBI1 < angleBI2)
-  ) {
-    I = I1;
-  } else {
-    I = I2;
-  }
+  // Figure out which is the closest intersection to this segment of the great circle
+  // Note that for points on a unit sphere, the dot product represents the
+  // cosine of the angle between the two vectors which monotonically increases
+  // the closer the two points are together and therefore determines proximity
+  const I = dot(C, I1) > dot(C, I2) ? I1 : I2;
 
   // I is the closest intersection to the segment, though might not actually be
   // ON the segment.
 
   // If angle AI or BI is greater than angleAB, I lies on the circle *beyond* A
   // and B so use the closest of A or B as the intersection
+  const angleAB = angle(A, B);
   const lngLatI = vectorToLngLat(I);
 
-  // Clone position when returning as it is reasonable to not expect structural
-  // sharing on the returned Position in all return cases
   if (angle(A, I) > angleAB || angle(B, I) > angleAB) {
-    if (distance(lngLatI, posA) <= distance(lngLatI, posB)) {
+    // Similar to the usage above, we use the larger dot product to determine
+    // which endpoint is closer to the test coordinates
+    // Note that the > means we defer to the endpoint when equidistant,
+    // following the segment tracking logic in the caller
+    if (dot(A, C) > dot(B, C)) {
+      // Clone position when returning as it is reasonable to not expect structural
+      // sharing on the returned Position in all return cases
       return [[...posA], false];
     } else {
       return [[...posB], true];
