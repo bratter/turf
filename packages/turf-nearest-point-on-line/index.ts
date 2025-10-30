@@ -75,12 +75,10 @@ function nearestPointOnLine<G extends LineString | MultiLineString>(
       for (let i = 0; i < coords.length - 1; i++) {
         //start - start of current line section
         const start: Feature<Point, { dist: number }> = point(coords[i]);
-        start.properties.dist = distance(pt, start, options);
         const startPos = getCoord(start);
 
         //stop - end of current line section
         const stop: Feature<Point, { dist: number }> = point(coords[i + 1]);
-        stop.properties.dist = distance(pt, stop, options);
         const stopPos = getCoord(stop);
 
         // sectionLength
@@ -91,38 +89,27 @@ function nearestPointOnLine<G extends LineString | MultiLineString>(
         // Short circuit if snap point is start or end position of the line
         // segment or if start is equal to stop position.
         if (startPos[0] === ptPos[0] && startPos[1] === ptPos[1]) {
-          [intersectPos, , wasEnd] = [startPos, undefined, false];
+          [intersectPos, wasEnd] = [startPos, false];
         } else if (stopPos[0] === ptPos[0] && stopPos[1] === ptPos[1]) {
-          [intersectPos, , wasEnd] = [stopPos, undefined, true];
+          [intersectPos, wasEnd] = [stopPos, true];
         } else if (startPos[0] === stopPos[0] && startPos[1] === stopPos[1]) {
-          [intersectPos, , wasEnd] = [stopPos, undefined, true];
+          [intersectPos, wasEnd] = [stopPos, true];
         } else {
           // Otherwise, find the nearest point the hard way.
-          [intersectPos, , wasEnd] = nearestPointOnSegment(
-            start.geometry.coordinates,
-            stop.geometry.coordinates,
-            getCoord(pt)
+          [intersectPos, wasEnd] = nearestPointOnSegment(
+            startPos,
+            stopPos,
+            ptPos
           );
         }
-        let intersectPt:
-          | Feature<
-              Point,
-              { dist: number; multiFeatureIndex: number; location: number }
-            >
-          | undefined;
 
-        if (intersectPos) {
-          intersectPt = point(intersectPos, {
-            dist: distance(pt, intersectPos, options),
-            multiFeatureIndex: multiFeatureIndex,
-            location: length + distance(start, intersectPos, options),
-          });
-        }
+        const intersectPt = point(intersectPos, {
+          dist: distance(pt, intersectPos, options),
+          multiFeatureIndex: multiFeatureIndex,
+          location: length + distance(start, intersectPos, options),
+        });
 
-        if (
-          intersectPt &&
-          intersectPt.properties.dist < closestPt.properties.dist
-        ) {
+        if (intersectPt.properties.dist < closestPt.properties.dist) {
           closestPt = {
             ...intersectPt,
             properties: {
@@ -164,7 +151,7 @@ function cross(v1: Vector, v2: Vector): Vector {
   return [v1y * v2z - v1z * v2y, v1z * v2x - v1x * v2z, v1x * v2y - v1y * v2x];
 }
 
-function magnitude(v: Vector) {
+function magnitude(v: Vector): number {
   return Math.sqrt(Math.pow(v[0], 2) + Math.pow(v[1], 2) + Math.pow(v[2], 2));
 }
 
@@ -195,7 +182,7 @@ function nearestPointOnSegment(
   posA: Position, // start point of segment to measure to
   posB: Position, // end point of segment to measure to
   posC: Position // point to measure from
-): [Position, boolean, boolean] {
+): [Position, boolean] {
   // Based heavily on this article on finding cross track distance to an arc:
   // https://gis.stackexchange.com/questions/209540/projecting-cross-track-distance-on-great-circle
 
@@ -249,19 +236,20 @@ function nearestPointOnSegment(
 
   // If angle AI or BI is greater than angleAB, I lies on the circle *beyond* A
   // and B so use the closest of A or B as the intersection
+  const lngLatI = vectorToLngLat(I);
+
+  // Clone position when returning as it is reasonable to not expect structural
+  // sharing on the returned Position in all return cases
   if (angle(A, I) > angleAB || angle(B, I) > angleAB) {
-    if (
-      distance(vectorToLngLat(I), vectorToLngLat(A)) <=
-      distance(vectorToLngLat(I), vectorToLngLat(B))
-    ) {
-      return [vectorToLngLat(A), true, false];
+    if (distance(lngLatI, posA) <= distance(lngLatI, posB)) {
+      return [[...posA], false];
     } else {
-      return [vectorToLngLat(B), false, true];
+      return [[...posB], true];
     }
   }
 
   // As angleAI nor angleBI don't exceed angleAB, I is on the segment
-  return [vectorToLngLat(I), false, false];
+  return [lngLatI, false];
 }
 
 export { nearestPointOnLine };
