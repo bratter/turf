@@ -536,3 +536,26 @@ test("turf-nearest-point-on-line -- issue 2934 correct endpoint chosen when in o
 
   t.end();
 });
+
+test("turf-nearest-point-on-line -- issue 2939 nearestPointOnSegment handles tiny segments", (t) => {
+  // create a test case where the line segment passed is small enough such that
+  // a cross product used to generate its normal in nearestPointOnSegment ends
+  // up as [0, 0, 0] but large enough so that the two points are not ===
+  // Note that this test case fails on Chrome 141.0, but was passing without
+  // the updates on Node 22.20.0, but is included anyway for regression
+  const line = lineString([
+    [35.000102519989014, 32.00010141921075],
+    [35.00010251998902, 32.00010141921075],
+  ]);
+
+  const pt = point([35.0005, 32.0005]);
+  const nearest = nearestPointOnLine(line, pt);
+
+  t.deepEqual(
+    nearest.geometry.coordinates,
+    [35.00010251998902, 32.00010141921075],
+    "nearest point should be the end point of the line string"
+  );
+
+  t.end();
+});

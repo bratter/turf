@@ -87,13 +87,12 @@ function nearestPointOnLine<G extends LineString | MultiLineString>(
         let wasEnd: boolean;
 
         // Short circuit if snap point is start or end position of the line
-        // segment or if start is equal to stop position.
-        if (startPos[0] === ptPos[0] && startPos[1] === ptPos[1]) {
+        // Test the end position first for consistency in case they are
+        // coincident
+        if (stopPos[0] === ptPos[0] && stopPos[1] === ptPos[1]) {
+          [intersectPos, wasEnd] = [stopPos, true];
+        } else if (startPos[0] === ptPos[0] && startPos[1] === ptPos[1]) {
           [intersectPos, wasEnd] = [startPos, false];
-        } else if (stopPos[0] === ptPos[0] && stopPos[1] === ptPos[1]) {
-          [intersectPos, wasEnd] = [stopPos, true];
-        } else if (startPos[0] === stopPos[0] && startPos[1] === stopPos[1]) {
-          [intersectPos, wasEnd] = [stopPos, true];
         } else {
           // Otherwise, find the nearest point the hard way.
           [intersectPos, wasEnd] = nearestPointOnSegment(
@@ -177,7 +176,10 @@ function lngLatToVector(a: Position): Vector {
 
 function vectorToLngLat(v: Vector): Position {
   const [x, y, z] = v;
-  const lat = radiansToDegrees(Math.asin(z));
+  // Clamp the z-value to ensure that is inside the [-1, 1] domain as required
+  // by asin. Note that
+  const zClamp = Math.min(Math.max(z, -1), 1);
+  const lat = radiansToDegrees(Math.asin(zClamp));
   const lng = radiansToDegrees(Math.atan2(y, x));
 
   return [lng, lat];
@@ -199,18 +201,47 @@ function nearestPointOnSegment(
   const C = lngLatToVector(posC); // ... to posC
 
   // The axis (normal vector) of the great circle plane containing the line segment
-  const segment_axis = cross(A, B);
+  const segmentAxis = cross(A, B);
+
+  // Two degenerate cases exist for the segment axis cross product. The first is
+  // when vectors are aligned (within the bounds of floating point tolerance).
+  // The second is where vectors are antipodal (again within the bounds of
+  // tolerance. Both cases produce a [0, 0, 0] cross product which invalidates
+  // the rest of the algorithm, but each case must be handled separately:
+  // - The aligned case indicates coincidence of A and B. therefore this can be
+  //   an early return assuming the closest point is the end (for consistency).
+  // - The antipodal case is truly degenerate - an infinte number of great
+  //   circles are possible and one will always pass through C. We assume this
+  //   is undefined behavior and therefore throw. Callers can catch this and
+  //   return 0 if they wish.
+  if (segmentAxis[0] === 0 && segmentAxis[1] === 0 && segmentAxis[2] === 0) {
+    if (dot(A, B) > 0) {
+      return [[...posB], true];
+    } else {
+      throw new Error(
+        `Undefined arc segment, line segment endpoints [[${posA}], [${posB}]] are antipodes`
+      );
+    }
+  }
 
   // The axis of the great circle passing through the segment's axis and the
   // target point
-  const target_axis = cross(segment_axis, C);
+  const targetAxis = cross(segmentAxis, C);
+
+  // This cross product also has a degenerate case where the segment axis is
+  // coincidient with or antipodal to the target point. In this case the point
+  // is equidistant to the entire segment. For consistency, we early return the
+  // endpoint as the matching point.
+  if (targetAxis[0] === 0 && targetAxis[1] === 0 && targetAxis[2] === 0) {
+    return [[...posB], true];
+  }
 
   // The line of intersection between the two great circle planes
-  const intersection_axis = cross(target_axis, segment_axis);
+  const intersectionAxis = cross(targetAxis, segmentAxis);
 
   // Vectors to the two points these great circles intersect are the normalized
   // intersection and its antipodes
-  const I1 = normalize(intersection_axis);
+  const I1 = normalize(intersectionAxis);
   const I2: Vector = [-I1[0], -I1[1], -I1[2]];
 
   // Figure out which is the closest intersection to this segment of the great circle
