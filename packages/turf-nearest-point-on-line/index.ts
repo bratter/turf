@@ -229,7 +229,7 @@ function nearestPointOnSegment(
   const targetAxis = cross(segmentAxis, C);
 
   // This cross product also has a degenerate case where the segment axis is
-  // coincidient with or antipodal to the target point. In this case the point
+  // coincident with or antipodal to the target point. In this case the point
   // is equidistant to the entire segment. For consistency, we early return the
   // endpoint as the matching point.
   if (targetAxis[0] === 0 && targetAxis[1] === 0 && targetAxis[2] === 0) {
